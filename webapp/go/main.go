@@ -4,6 +4,7 @@ import (
 	crand "crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -53,6 +54,33 @@ func (sm *SyncMap[K, V]) Clear() {
 	sm.m = map[K]*V{}
 }
 
+type SyncListMap[K comparable, V any] struct {
+	m  map[K][]V
+	mu sync.RWMutex
+}
+
+func NewSyncListMap[K comparable, V any]() *SyncListMap[K, V] {
+	return &SyncListMap[K, V]{m: map[K][]V{}}
+}
+
+func (sm *SyncListMap[K, V]) Add(key K, value V) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.m[key] = append(sm.m[key], value)
+}
+
+func (sm *SyncListMap[K, V]) Get(key K) []V {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.m[key]
+}
+
+func (sm *SyncListMap[K, V]) Clear() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.m = map[K][]V{}
+}
+
 type ChairLocationSummary struct {
 	ChairID       string       `db:"chair_id"`
 	TotalDistance int          `db:"total_distance"`
@@ -60,11 +88,15 @@ type ChairLocationSummary struct {
 }
 
 var userMap = NewSyncMap[string, User]()
+var chairRideMap = NewSyncMap[string, Ride]()                            // chair_id -> latest Ride
+var RideStatusListMap = NewSyncListMap[string, RideStatus]()             // ride id -> ride status
 var chairLocationSummaryMap = NewSyncMap[string, ChairLocationSummary]() // chair_id -> ChairLocationSummary
 var latestChairLocationMap = NewSyncMap[string, ChairLocation]()         // chair_id -> latest ChairLocation
 
 func LoadMap() {
 	LoadUserFromDB()
+	LoadChairFromDB()
+	LoadRideStatusFromDB()
 	LoadChairLocationSummaryFromDB()
 	LoadLatestChairLocationFromDB()
 }
@@ -81,6 +113,44 @@ func LoadUserFromDB() {
 	for _, row := range rows {
 		// add to sync map
 		userMap.Add(row.ID, *row)
+	}
+}
+
+func LoadChairFromDB() {
+	// clear sync map
+	chairRideMap.Clear()
+
+	var rows []*Chair
+	if err := db.Select(&rows, `SELECT * FROM chairs`); err != nil {
+		log.Fatalf("failed to load : %+v", err)
+		return
+	}
+	for _, chair := range rows {
+		// add to sync map
+		var ride Ride
+		if err := db.Get(&ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			log.Fatalf("failed to load rides: %+v", err)
+			return
+		}
+		chairRideMap.Add(chair.ID, ride)
+	}
+}
+
+func LoadRideStatusFromDB() {
+	// clear sync map
+	RideStatusListMap.Clear()
+
+	var rows []*RideStatus
+	if err := db.Select(&rows, `SELECT * FROM ride_statuses ORDER BY ride_id, created_at`); err != nil {
+		log.Fatalf("failed to load ride_statuses: %+v", err)
+		return
+	}
+	for _, row := range rows {
+		// add to sync map
+		RideStatusListMap.Add(row.RideID, *row)
 	}
 }
 
