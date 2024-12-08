@@ -1,5 +1,3 @@
-PATH=$PATH:/home/isucon/local/golang/bin
-
 ISUCON_DB_HOST="127.0.0.1"
 ISUCON_DB_PORT="3306"
 ISUCON_DB_USER="isucon"

@@ -193,14 +193,14 @@ type postInitializeResponse struct {
 
 func postInitialize(w http.ResponseWriter, r *http.Request) {
 	go func() {
-		if out, err := exec.Command("go", "tool", "pprof", "-seconds=30", "-proto", "-output", "/home/isucon/pprof/pprof.pb.gz", "localhost:6060/debug/pprof/profile").CombinedOutput(); err != nil {
+		if out, err := exec.Command("/home/isucon/local/golang/bin/go", "tool", "pprof", "-seconds=30", "-proto", "-output", "/home/isucon/pprof/pprof.pb.gz", "localhost:6060/debug/pprof/profile").CombinedOutput(); err != nil {
 			fmt.Printf("pprof failed with err=%s, %s", string(out), err)
 		} else {
 			fmt.Printf("pprof.pb.gz created: %s", string(out))
 		}
 	}()
 	go func() {
-		if out, err := exec.Command("go", "tool", "pprof", "-seconds=30", "-proto", "-output", "/home/isucon/pprof/fgprof.pb.gz", "localhost:6060/debug/fgprof").CombinedOutput(); err != nil {
+		if out, err := exec.Command("/home/isucon/local/golang/bin/go", "tool", "pprof", "-seconds=30", "-proto", "-output", "/home/isucon/pprof/fgprof.pb.gz", "localhost:6060/debug/fgprof").CombinedOutput(); err != nil {
 			fmt.Printf("fgprof failed with err=%s, %s", string(out), err)
 		} else {
 			fmt.Printf("fgprof.pb.gz created: %s", string(out))
