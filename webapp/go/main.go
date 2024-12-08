@@ -74,6 +74,12 @@ func (t *SyncKDTree) Add(p *ChairLocation) {
 	}
 }
 
+func (t *SyncKDTree) Remove(p *ChairLocation) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.tree.Remove(p)
+}
+
 func (t *SyncKDTree) Search(r kdrange.Range) []*ChairLocation {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
