@@ -1,0 +1,8 @@
+.*
+!.gitignore
+!*.alias.bash
+/pprof
+/tmp
+/go
+/local
+/webapp/rust
