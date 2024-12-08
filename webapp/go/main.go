@@ -52,10 +52,18 @@ func (sm *SyncMap[K, V]) Clear() {
 	sm.m = map[K]*V{}
 }
 
+type ChairLocationSummary struct {
+	ChairID       string     `db:"chair_id"`
+	TotalDistance int64      `db:"total_distance"`
+	UpdatedAt     *time.Time `db:"updated_at"`
+}
+
 var userMap = NewSyncMap[string, User]()
+var chairLocationSummaryMap = NewSyncMap[string, ChairLocationSummary]() // chair_id -> ChairLocationSummary
 
 func LoadMap() {
 	LoadUserFromDB()
+	LoadChairLocationSummaryFromDB()
 }
 
 func LoadUserFromDB() {
@@ -64,12 +72,34 @@ func LoadUserFromDB() {
 
 	var rows []*User
 	if err := db.Select(&rows, `SELECT * FROM users`); err != nil {
-		log.Fatalf("failed to load : %+v", err)
+		log.Fatalf("failed to load users: %+v", err)
 		return
 	}
 	for _, row := range rows {
 		// add to sync map
 		userMap.Add(row.ID, *row)
+	}
+}
+
+func LoadChairLocationSummaryFromDB() {
+	// clear sync map
+	chairLocationSummaryMap.Clear()
+
+	var rows []*ChairLocationSummary
+	if err := db.Select(&rows, `SELECT chair_id,
+									SUM(IFNULL(distance, 0)) AS total_distance,
+									MAX(created_at)          AS updated_at
+								FROM (SELECT chair_id,
+											created_at,
+											ABS(latitude - LAG(latitude) OVER (PARTITION BY chair_id ORDER BY created_at)) +
+											ABS(longitude - LAG(longitude) OVER (PARTITION BY chair_id ORDER BY created_at)) AS distance
+										FROM chair_locations) tmp
+								GROUP BY chair_id`); err != nil {
+		log.Fatalf("failed to load chair_locations summary: %+v", err)
+		return
+	}
+	for _, row := range rows {
+		chairLocationSummaryMap.Add(row.ChairID, *row)
 	}
 }
 

@@ -111,6 +111,17 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	hasPrevLocation := true
+	prevLocation := &ChairLocation{}
+	if err := tx.GetContext(ctx, prevLocation, `SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`, chair.ID); err != nil {
+		if err == sql.ErrNoRows {
+			hasPrevLocation = false
+		} else {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
 	chairLocationID := ulid.Make().String()
 	if _, err := tx.ExecContext(
 		ctx,
@@ -125,6 +136,16 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	if err := tx.GetContext(ctx, location, `SELECT * FROM chair_locations WHERE id = ?`, chairLocationID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+
+	if hasPrevLocation {
+		summary := chairLocationSummaryMap.Get(chair.ID)
+		if summary == nil {
+			summary = &ChairLocationSummary{}
+		}
+		summary.TotalDistance += int64(abs(prevLocation.Latitude-req.Latitude) + abs(prevLocation.Longitude-req.Longitude))
+		summary.UpdatedAt = &location.CreatedAt
+		chairLocationSummaryMap.Add(chair.ID, *summary)
 	}
 
 	ride := &Ride{}
