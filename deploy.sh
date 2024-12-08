@@ -52,6 +52,7 @@ sudo journalctl --vacuum-time=1s
 # restart services
 sudo systemctl restart mysql
 sudo systemctl restart $APP_SERVICE_NAME
+sudo systemctl restart isuride-matcher.service
 sudo systemctl restart nginx
 
 date -R
