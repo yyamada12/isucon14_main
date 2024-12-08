@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	_ "github.com/kyroy/kdtree"
 	"github.com/oklog/ulid/v2"
 )
 
