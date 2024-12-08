@@ -54,31 +54,49 @@ func (sm *SyncMap[K, V]) Clear() {
 	sm.m = map[K]*V{}
 }
 
-type SyncListMap[K comparable, V any] struct {
-	m  map[K][]V
+type RideStatusListMap struct {
+	m  map[string][]*RideStatus
 	mu sync.RWMutex
 }
 
-func NewSyncListMap[K comparable, V any]() *SyncListMap[K, V] {
-	return &SyncListMap[K, V]{m: map[K][]V{}}
+func NewRideStatusListMap() *RideStatusListMap {
+	return &RideStatusListMap{m: map[string][]*RideStatus{}}
 }
 
-func (sm *SyncListMap[K, V]) Add(key K, value V) {
+func (sm *RideStatusListMap) Add(key string, value RideStatus) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	sm.m[key] = append(sm.m[key], value)
+	sm.m[key] = append(sm.m[key], &value)
 }
 
-func (sm *SyncListMap[K, V]) Get(key K) []V {
+func (sm *RideStatusListMap) GetChairStatus(key string) RideStatus {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	statuses, ok := sm.m[key]
+	if !ok {
+		return RideStatus{}
+	}
+	now := time.Now()
+	for _, status := range statuses {
+		if status.ChairSentAt == nil {
+			status.ChairSentAt = &now
+			return *status
+		}
+	}
+	last := statuses[len(statuses)-1]
+	return *last
+}
+
+func (sm *RideStatusListMap) Get(key string) []*RideStatus {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	return sm.m[key]
 }
 
-func (sm *SyncListMap[K, V]) Clear() {
+func (sm *RideStatusListMap) Clear() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	sm.m = map[K][]V{}
+	sm.m = map[string][]*RideStatus{}
 }
 
 type ChairLocationSummary struct {
@@ -88,8 +106,8 @@ type ChairLocationSummary struct {
 }
 
 var userMap = NewSyncMap[string, User]()
-var chairRideMap = NewSyncMap[string, Ride]()                            // chair_id -> latest Ride
-var RideStatusListMap = NewSyncListMap[string, RideStatus]()             // ride id -> ride status
+var chairRideMap = NewSyncMap[string, Ride]() // chair_id -> latest Ride
+var rideStatusListMap = NewRideStatusListMap()
 var chairLocationSummaryMap = NewSyncMap[string, ChairLocationSummary]() // chair_id -> ChairLocationSummary
 var latestChairLocationMap = NewSyncMap[string, ChairLocation]()         // chair_id -> latest ChairLocation
 
@@ -141,7 +159,7 @@ func LoadChairFromDB() {
 
 func LoadRideStatusFromDB() {
 	// clear sync map
-	RideStatusListMap.Clear()
+	rideStatusListMap.Clear()
 
 	var rows []*RideStatus
 	if err := db.Select(&rows, `SELECT * FROM ride_statuses ORDER BY ride_id, created_at`); err != nil {
@@ -150,7 +168,7 @@ func LoadRideStatusFromDB() {
 	}
 	for _, row := range rows {
 		// add to sync map
-		RideStatusListMap.Add(row.RideID, *row)
+		rideStatusListMap.Add(row.RideID, *row)
 	}
 }
 
