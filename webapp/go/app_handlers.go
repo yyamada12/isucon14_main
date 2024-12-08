@@ -883,29 +883,15 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	chairIDs := []string{}
-	if err := tx.SelectContext(
+	chairs := []Chair{}
+	err = tx.SelectContext(
 		ctx,
-		&chairIDs,
-		`SELECT chair_id FROM chair_locations WHERE created_at = (SELECT MAX(created_at) FROM chair_locations WHERE chair_id = chair_locations.chair_id) AND ? <= latitude AND latitude <= ? AND ? <= longitude AND longitude <= ?`,
-		lat-distance, lat+distance, lon-distance, lon+distance,
-	); err != nil {
+		&chairs,
+		`SELECT * FROM chairs`,
+	)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
-	}
-
-	chairs := []Chair{}
-	if len(chairIDs) > 0 {
-		query, args, err := sqlx.In(`SELECT * FROM chairs WHERE id IN (?)`, chairIDs)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		err = tx.SelectContext(ctx, &chairs, query, args...)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
 	}
 
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
