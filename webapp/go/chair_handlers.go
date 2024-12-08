@@ -129,6 +129,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	latestChairLocationMap.Add(chair.ID, *location)
+	chairLocationTree.Add(location)
 
 	summary := chairLocationSummaryMap.Get(chair.ID)
 	if summary == nil {

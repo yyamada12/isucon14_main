@@ -22,6 +22,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	"github.com/kyroy/kdtree"
+	"github.com/kyroy/kdtree/kdrange"
 )
 
 var db *sqlx.DB
@@ -53,6 +55,42 @@ func (sm *SyncMap[K, V]) Clear() {
 	sm.m = map[K]*V{}
 }
 
+type SyncKDTree struct {
+	tree        kdtree.KDTree
+	insertCount int
+	mu          sync.RWMutex
+}
+
+func NewSyncKDTree() *SyncKDTree {
+	return &SyncKDTree{}
+}
+
+func (t *SyncKDTree) Add(p *ChairLocation) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.tree.Insert(p)
+	if t.insertCount++; t.insertCount%1000 == 0 {
+		t.tree.Balance()
+	}
+}
+
+func (t *SyncKDTree) Search(r kdrange.Range) []*ChairLocation {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	points := t.tree.RangeSearch(r)
+	locations := make([]*ChairLocation, len(points))
+	for i, p := range points {
+		locations[i] = p.(*ChairLocation)
+	}
+	return locations
+}
+
+func (t *SyncKDTree) Clear() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.tree = kdtree.KDTree{}
+}
+
 type ChairLocationSummary struct {
 	ChairID       string       `db:"chair_id"`
 	TotalDistance int          `db:"total_distance"`
@@ -62,6 +100,7 @@ type ChairLocationSummary struct {
 var userMap = NewSyncMap[string, User]()
 var chairLocationSummaryMap = NewSyncMap[string, ChairLocationSummary]() // chair_id -> ChairLocationSummary
 var latestChairLocationMap = NewSyncMap[string, ChairLocation]()         // chair_id -> latest ChairLocation
+var chairLocationTree = NewSyncKDTree()
 
 func LoadMap() {
 	LoadUserFromDB()
@@ -117,6 +156,7 @@ func LoadLatestChairLocationFromDB() {
 	}
 	for _, row := range rows {
 		latestChairLocationMap.Add(row.ChairID, *row)
+		chairLocationTree.Add(row)
 	}
 }
 

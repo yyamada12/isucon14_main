@@ -29,6 +29,21 @@ type ChairLocation struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
+func (c *ChairLocation) Dimensions() int {
+	return 2
+}
+
+func (c *ChairLocation) Dimension(i int) float64 {
+	switch i {
+	case 0:
+		return float64(c.Latitude)
+	case 1:
+		return float64(c.Longitude)
+	default:
+		return 0
+	}
+}
+
 type User struct {
 	ID             string    `db:"id"`
 	Username       string    `db:"username"`

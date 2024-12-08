@@ -10,6 +10,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/kyroy/kdtree"
+	"github.com/kyroy/kdtree/kdrange"
 	"github.com/oklog/ulid/v2"
 )
 
@@ -884,12 +885,19 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	locations := chairLocationTree.Search(kdrange.New(float64(lat-distance)-0.5, float64(lat+distance)+0.5, float64(lon-distance)-0.5, float64(lon+distance)+0.5))
+	chairIDs := make([]string, len(locations))
+	for i, location := range locations {
+		chairIDs[i] = location.ChairID
+	}
+
 	chairs := []Chair{}
-	err = tx.SelectContext(
-		ctx,
-		&chairs,
-		`SELECT * FROM chairs`,
-	)
+	query, args, err := sqlx.In(`SELECT * FROM chairs WHERE id IN (?)`, chairIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	err = tx.SelectContext(ctx, &chairs, query, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
