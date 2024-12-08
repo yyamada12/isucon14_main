@@ -61,10 +61,12 @@ type ChairLocationSummary struct {
 
 var userMap = NewSyncMap[string, User]()
 var chairLocationSummaryMap = NewSyncMap[string, ChairLocationSummary]() // chair_id -> ChairLocationSummary
+var latestChairLocationMap = NewSyncMap[string, ChairLocation]()         // chair_id -> latest ChairLocation
 
 func LoadMap() {
 	LoadUserFromDB()
 	LoadChairLocationSummaryFromDB()
+	LoadLatestChairLocationFromDB()
 }
 
 func LoadUserFromDB() {
@@ -101,6 +103,20 @@ func LoadChairLocationSummaryFromDB() {
 	}
 	for _, row := range rows {
 		chairLocationSummaryMap.Add(row.ChairID, *row)
+	}
+}
+
+func LoadLatestChairLocationFromDB() {
+	// clear sync map
+	latestChairLocationMap.Clear()
+
+	var rows []*ChairLocation
+	if err := db.Select(&rows, `SELECT * FROM chair_locations WHERE created_at = (SELECT MAX(created_at) FROM chair_locations WHERE chair_id = chair_locations.chair_id)`); err != nil {
+		log.Fatalf("failed to load latest chair_locations: %+v", err)
+		return
+	}
+	for _, row := range rows {
+		latestChairLocationMap.Add(row.ChairID, *row)
 	}
 }
 

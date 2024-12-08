@@ -111,16 +111,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	hasPrevLocation := true
-	prevLocation := &ChairLocation{}
-	if err := tx.GetContext(ctx, prevLocation, `SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`, chair.ID); err != nil {
-		if err == sql.ErrNoRows {
-			hasPrevLocation = false
-		} else {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
+	prevLocation := latestChairLocationMap.Get(chair.ID)
 
 	chairLocationID := ulid.Make().String()
 	if _, err := tx.ExecContext(
@@ -137,17 +128,18 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	latestChairLocationMap.Add(chair.ID, *location)
 
-	if hasPrevLocation {
-		summary := chairLocationSummaryMap.Get(chair.ID)
-		if summary == nil {
-			summary = &ChairLocationSummary{}
-		}
-		summary.TotalDistance += abs(prevLocation.Latitude-req.Latitude) + abs(prevLocation.Longitude-req.Longitude)
-		summary.UpdatedAt.Time = location.CreatedAt
-		summary.UpdatedAt.Valid = true
-		chairLocationSummaryMap.Add(chair.ID, *summary)
+	summary := chairLocationSummaryMap.Get(chair.ID)
+	if summary == nil {
+		summary = &ChairLocationSummary{}
 	}
+	if prevLocation != nil {
+		summary.TotalDistance += abs(prevLocation.Latitude-req.Latitude) + abs(prevLocation.Longitude-req.Longitude)
+	}
+	summary.UpdatedAt.Time = location.CreatedAt
+	summary.UpdatedAt.Valid = true
+	chairLocationSummaryMap.Add(chair.ID, *summary)
 
 	ride := &Ride{}
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
