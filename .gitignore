@@ -1,6 +1,7 @@
 .*
 !.gitignore
 !*.alias.bash
+!.vscode
 /pprof
 /tmp
 /go

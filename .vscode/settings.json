@@ -1,0 +1,24 @@
+{
+    "files.watcherExclude": {
+        "**/webapp/nodejs/**": true,
+        "**/webapp/perl/**": true,
+        "**/webapp/php/**": true,
+        "**/webapp/python/**": true,
+        "**/webapp/ruby/**": true,
+        "**/webapp/rust/**": true,
+        "**/bin/**": true,
+        "**/pkg/**": true,
+        "**/src/**": true,
+    },
+    "files.exclude": {
+        "**/webapp/nodejs/**": true,
+        "**/webapp/perl/**": true,
+        "**/webapp/php/**": true,
+        "**/webapp/python/**": true,
+        "**/webapp/ruby/**": true,
+        "**/webapp/rust/**": true,
+        "**/bin/**": true,
+        "**/pkg/**": true,
+        "**/src/**": true,
+    }
+}
