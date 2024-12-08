@@ -20,5 +20,7 @@
         "**/bin/**": true,
         "**/pkg/**": true,
         "**/src/**": true,
-    }
+    },
+    "go.goroot": "/home/isucon/local/golang",
+    "go.gopath": "/home/isucon/go:/home/isucon/webapp/go/"
 }
