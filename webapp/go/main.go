@@ -4,12 +4,14 @@ import (
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
+	"time"
 
 	_ "net/http/pprof"
 
@@ -72,6 +74,16 @@ func setup() http.Handler {
 		panic(err)
 	}
 	db = _db
+
+	for {
+		err := db.Ping()
+		if err == nil {
+			break
+		}
+		log.Print(err)
+		time.Sleep(time.Second * 2)
+	}
+	log.Print("DB ready!")
 
 	mux := chi.NewRouter()
 	mux.Use(middleware.Logger)
