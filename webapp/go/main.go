@@ -2,6 +2,7 @@ package main
 
 import (
 	crand "crypto/rand"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -53,9 +54,9 @@ func (sm *SyncMap[K, V]) Clear() {
 }
 
 type ChairLocationSummary struct {
-	ChairID       string     `db:"chair_id"`
-	TotalDistance int64      `db:"total_distance"`
-	UpdatedAt     *time.Time `db:"updated_at"`
+	ChairID       string       `db:"chair_id"`
+	TotalDistance int          `db:"total_distance"`
+	UpdatedAt     sql.NullTime `db:"updated_at"`
 }
 
 var userMap = NewSyncMap[string, User]()

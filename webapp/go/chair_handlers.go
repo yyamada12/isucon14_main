@@ -143,8 +143,9 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		if summary == nil {
 			summary = &ChairLocationSummary{}
 		}
-		summary.TotalDistance += int64(abs(prevLocation.Latitude-req.Latitude) + abs(prevLocation.Longitude-req.Longitude))
-		summary.UpdatedAt = &location.CreatedAt
+		summary.TotalDistance += abs(prevLocation.Latitude-req.Latitude) + abs(prevLocation.Longitude-req.Longitude)
+		summary.UpdatedAt.Time = location.CreatedAt
+		summary.UpdatedAt.Valid = true
 		chairLocationSummaryMap.Add(chair.ID, *summary)
 	}
 
