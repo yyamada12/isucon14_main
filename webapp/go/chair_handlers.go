@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -54,6 +55,20 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	now := time.Now()
+	chairMap.Add(chairID, Chair{
+		ID:          chairID,
+		OwnerID:     owner.ID,
+		Name:        req.Name,
+		Model:       req.Model,
+		IsActive:    false,
+		AccessToken: accessToken,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	ch := make(chan RideWithStatus, 100)
+	chairNotifyChMap.Add(chairID, &ch)
 
 	http.SetCookie(w, &http.Cookie{
 		Path:  "/",
@@ -159,12 +174,22 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+				chairNotifyCh := chairNotifyChMap.Get(chair.ID)
+				*chairNotifyCh <- RideWithStatus{
+					RideID: ride.ID,
+					Status: "PICKUP",
+				}
 			}
 
 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
 				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
 					writeError(w, http.StatusInternalServerError, err)
 					return
+				}
+				chairNotifyCh := chairNotifyChMap.Get(chair.ID)
+				*chairNotifyCh <- RideWithStatus{
+					RideID: ride.ID,
+					Status: "ARRIVED",
 				}
 			}
 		}
@@ -196,6 +221,133 @@ type chairGetNotificationResponseData struct {
 	PickupCoordinate      Coordinate `json:"pickup_coordinate"`
 	DestinationCoordinate Coordinate `json:"destination_coordinate"`
 	Status                string     `json:"status"`
+}
+
+type RideWithStatus struct {
+	RideID string
+	Status string
+}
+
+func chairGetNotificationWithSSE(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	chair := ctx.Value("chair").(*Chair)
+
+	// タイムアウトを無効化（SSE ストリーム用）
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
+		return
+	}
+
+	// メッセージをストリームとして送信
+	notifyCh := chairNotifyChMap.Get(chair.ID)
+	fmt.Println("SSE での書き込みを待ちます。 chairID: ", chair.ID)
+
+	// 初回は、DB からデータを取得して送信
+	tx, err := db.Beginx()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer tx.Rollback()
+	ride := &Ride{}
+	yetSentRideStatus := RideStatus{}
+	status := ""
+
+	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeSSE(w, &chairGetNotificationResponseData{})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	if err := tx.GetContext(ctx, &yetSentRideStatus, `SELECT * FROM ride_statuses WHERE ride_id = ? AND chair_sent_at IS NULL ORDER BY created_at ASC LIMIT 1`, ride.ID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			status, err = getLatestRideStatus(ctx, tx, ride.ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+		} else {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		status = yetSentRideStatus.Status
+	}
+
+	user := userMap.Get(ride.UserID)
+	if user == nil {
+		err = tx.GetContext(ctx, user, "SELECT * FROM users WHERE id = ? FOR SHARE", ride.UserID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	if yetSentRideStatus.ID != "" {
+		_, err := tx.ExecContext(ctx, `UPDATE ride_statuses SET chair_sent_at = CURRENT_TIMESTAMP(6) WHERE id = ?`, yetSentRideStatus.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeSSE(w, &chairGetNotificationResponseData{
+		RideID: ride.ID,
+		User: simpleUser{
+			ID:   user.ID,
+			Name: fmt.Sprintf("%s %s", user.Firstname, user.Lastname),
+		},
+		PickupCoordinate: Coordinate{
+			Latitude:  ride.PickupLatitude,
+			Longitude: ride.PickupLongitude,
+		},
+		DestinationCoordinate: Coordinate{
+			Latitude:  ride.DestinationLatitude,
+			Longitude: ride.DestinationLongitude,
+		},
+		Status: status,
+	})
+	flusher.Flush() // クライアントにデータを送信
+
+	// 初回ここまで
+
+	// ここから、SSEでchに通知されたメッセージを送る
+	for rideWithStatus := range *notifyCh {
+		fmt.Println("SSE のためのnotifyChにメッセージが来ました。 RideID: ", rideWithStatus.RideID)
+		// メッセージを受け取ったら、クライアントに送信
+		ride := rideMap.Get(rideWithStatus.RideID)
+		user := userMap.Get(ride.UserID)
+
+		resp := &chairGetNotificationResponseData{
+			RideID: ride.ID,
+			User: simpleUser{
+				ID:   user.ID,
+				Name: fmt.Sprintf("%s %s", user.Firstname, user.Lastname),
+			},
+			PickupCoordinate: Coordinate{
+				Latitude:  ride.PickupLatitude,
+				Longitude: ride.PickupLongitude,
+			},
+			DestinationCoordinate: Coordinate{
+				Latitude:  ride.DestinationLatitude,
+				Longitude: ride.DestinationLongitude,
+			},
+			Status: rideWithStatus.Status,
+		}
+
+		fmt.Println("SSE での書き込みを行います。 rideID: ", ride.ID, " status: ", rideWithStatus.Status)
+		writeSSE(w, resp)
+		flusher.Flush() // クライアントにデータを送信
+	}
 }
 
 func chairGetNotification(w http.ResponseWriter, r *http.Request) {
@@ -326,6 +478,24 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		fmt.Println("hogeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee!!!!")
+		chairNotifyCh := chairNotifyChMap.Get(chair.ID)
+		// MATCHING が発生したタイミングではchairIDが存在せず、ENTOURTE が発生したタイミングでchairIDが紐づくため、このタイミングでまとめてMATCHING と ENROUTE のイベントを chairNotifyCh に送信する
+
+		fmt.Println("SSE のためのnotifyChにメッセージが送ります。chairID", chair.ID, "RideID: ", ride.ID)
+
+		*chairNotifyCh <- RideWithStatus{
+			RideID: ride.ID,
+			Status: "MATCHING",
+		}
+
+		fmt.Println("ブロックされてる？？。chairID", chair.ID, "RideID: ", ride.ID)
+
+		*chairNotifyCh <- RideWithStatus{
+			RideID: ride.ID,
+			Status: "ENROUTE",
+		}
+		fmt.Println("SSE のためのnotifyChにメッセージが送りました。chairID", chair.ID, "RideID: ", ride.ID)
 	// After Picking up user
 	case "CARRYING":
 		status, err := getLatestRideStatus(ctx, tx, ride.ID)
@@ -340,6 +510,11 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "CARRYING"); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
+		}
+		chairNotifyCh := chairNotifyChMap.Get(chair.ID)
+		*chairNotifyCh <- RideWithStatus{
+			RideID: ride.ID,
+			Status: "CARRYING",
 		}
 	default:
 		writeError(w, http.StatusBadRequest, errors.New("invalid status"))

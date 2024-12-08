@@ -444,6 +444,8 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rideMap.Add(rideID, ride)
+
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
 		RideID: rideID,
 		Fare:   fare,
@@ -635,6 +637,12 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+
+	chairNotifyCh := chairNotifyChMap.Get(ride.ChairID.String)
+	*chairNotifyCh <- RideWithStatus{
+		RideID: ride.ID,
+		Status: "COMPLETED",
 	}
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{

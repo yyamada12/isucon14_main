@@ -53,6 +53,33 @@ func (sm *SyncMap[K, V]) Clear() {
 	sm.m = map[K]*V{}
 }
 
+type SyncMap2[K comparable, V any] struct {
+	m  map[K]*V
+	mu sync.RWMutex
+}
+
+func NewSyncMap2[K comparable, V any]() *SyncMap2[K, V] {
+	return &SyncMap2[K, V]{m: map[K]*V{}}
+}
+
+func (sm *SyncMap2[K, V]) Add(key K, value *V) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.m[key] = value
+}
+
+func (sm *SyncMap2[K, V]) Get(key K) *V {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.m[key]
+}
+
+func (sm *SyncMap2[K, V]) Clear() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.m = map[K]*V{}
+}
+
 type ChairLocationSummary struct {
 	ChairID       string       `db:"chair_id"`
 	TotalDistance int          `db:"total_distance"`
@@ -60,11 +87,18 @@ type ChairLocationSummary struct {
 }
 
 var userMap = NewSyncMap[string, User]()
+var chairMap = NewSyncMap[string, Chair]()
+var rideMap = NewSyncMap[string, Ride]()
+
 var chairLocationSummaryMap = NewSyncMap[string, ChairLocationSummary]() // chair_id -> ChairLocationSummary
 var latestChairLocationMap = NewSyncMap[string, ChairLocation]()         // chair_id -> latest ChairLocation
 
+var chairNotifyChMap = NewSyncMap2[string, chan RideWithStatus]()
+
 func LoadMap() {
 	LoadUserFromDB()
+	LoadChairFromDB()
+	LoadRideFromDB()
 	LoadChairLocationSummaryFromDB()
 	LoadLatestChairLocationFromDB()
 }
@@ -117,6 +151,39 @@ func LoadLatestChairLocationFromDB() {
 	}
 	for _, row := range rows {
 		latestChairLocationMap.Add(row.ChairID, *row)
+	}
+}
+
+func LoadChairFromDB() {
+	// clear sync map
+	chairMap.Clear()
+	chairNotifyChMap.Clear()
+
+	var rows []*Chair
+	if err := db.Select(&rows, `SELECT * FROM chairs`); err != nil {
+		log.Fatalf("failed to load : %+v", err)
+		return
+	}
+	for _, row := range rows {
+		// add to sync map
+		chairMap.Add(row.ID, *row)
+		ch := make(chan RideWithStatus, 100)
+		chairNotifyChMap.Add(row.ID, &ch)
+	}
+}
+
+func LoadRideFromDB() {
+	// clear sync map
+	rideMap.Clear()
+
+	var rows []*Ride
+	if err := db.Select(&rows, `SELECT * FROM rides`); err != nil {
+		log.Fatalf("failed to load : %+v", err)
+		return
+	}
+	for _, row := range rows {
+		// add to sync map
+		rideMap.Add(row.ID, *row)
 	}
 }
 
@@ -218,7 +285,8 @@ func setup() http.Handler {
 		authedMux := mux.With(chairAuthMiddleware)
 		authedMux.HandleFunc("POST /api/chair/activity", chairPostActivity)
 		authedMux.HandleFunc("POST /api/chair/coordinate", chairPostCoordinate)
-		authedMux.HandleFunc("GET /api/chair/notification", chairGetNotification)
+		// authedMux.HandleFunc("GET /api/chair/notification", chairGetNotification)
+		authedMux.HandleFunc("GET /api/chair/notification", chairGetNotificationWithSSE)
 		authedMux.HandleFunc("POST /api/chair/rides/{ride_id}/status", chairPostRideStatus)
 	}
 
@@ -294,6 +362,18 @@ func writeJSON(w http.ResponseWriter, statusCode int, v interface{}) {
 	}
 	w.WriteHeader(statusCode)
 	w.Write(buf)
+}
+
+func writeSSE(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "text/event-stream")
+
+	buf, err := json.Marshal(v)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	fmt.Fprintf(w, "data: %s\n\n", buf)
+	fmt.Printf("data: %s\n\n", buf)
 }
 
 func writeError(w http.ResponseWriter, statusCode int, err error) {
