@@ -48,8 +48,10 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	ride.ChairID = sql.NullString{String: matched.ID, Valid: true}
 
 	chairRideMap.Add(matched.ID, *ride)
+	userRideMap.Add(ride.UserID, *ride)
 
 	w.WriteHeader(http.StatusNoContent)
 }

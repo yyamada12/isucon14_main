@@ -451,6 +451,8 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		Status: "MATCHING",
 	})
 
+	userRideMap.Add(user.ID, ride)
+
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
 		RideID: rideID,
 		Fare:   fare,
@@ -694,34 +696,41 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, user.ID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeJSON(w, http.StatusOK, &appGetNotificationResponse{
-				RetryAfterMs: 30,
-			})
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
+	ride := userRideMap.Get(user.ID)
+	if ride == nil {
+		writeJSON(w, http.StatusOK, &appGetNotificationResponse{
+			RetryAfterMs: 30,
+		})
 		return
 	}
 
-	yetSentRideStatus := RideStatus{}
-	status := ""
-	if err := tx.GetContext(ctx, &yetSentRideStatus, `SELECT * FROM ride_statuses WHERE ride_id = ? AND app_sent_at IS NULL ORDER BY created_at ASC LIMIT 1`, ride.ID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			status, err = getLatestRideStatus(ctx, tx, ride.ID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-		} else {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	} else {
-		status = yetSentRideStatus.Status
-	}
+	// if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, user.ID); err != nil {
+	// 	if errors.Is(err, sql.ErrNoRows) {
+	// 		writeJSON(w, http.StatusOK, &appGetNotificationResponse{
+	// 			RetryAfterMs: 30,
+	// 		})
+	// 		return
+	// 	}
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
+
+	yetSentRideStatus := rideStatusListMap.GetUserStatus(ride.ID)
+	status := yetSentRideStatus.Status
+	// if err := tx.GetContext(ctx, &yetSentRideStatus, `SELECT * FROM ride_statuses WHERE ride_id = ? AND app_sent_at IS NULL ORDER BY created_at ASC LIMIT 1`, ride.ID); err != nil {
+	// 	if errors.Is(err, sql.ErrNoRows) {
+	// 		status, err = getLatestRideStatus(ctx, tx, ride.ID)
+	// 		if err != nil {
+	// 			writeError(w, http.StatusInternalServerError, err)
+	// 			return
+	// 		}
+	// 	} else {
+	// 		writeError(w, http.StatusInternalServerError, err)
+	// 		return
+	// 	}
+	// } else {
+	// 	status = yetSentRideStatus.Status
+	// }
 
 	fare, err := calculateDiscountedFare(ctx, tx, user.ID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 	if err != nil {

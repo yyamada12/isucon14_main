@@ -87,6 +87,24 @@ func (sm *RideStatusListMap) GetChairStatus(key string) RideStatus {
 	return *last
 }
 
+func (sm *RideStatusListMap) GetUserStatus(key string) RideStatus {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	statuses, ok := sm.m[key]
+	if !ok {
+		return RideStatus{}
+	}
+	now := time.Now()
+	for _, status := range statuses {
+		if status.AppSentAt == nil {
+			status.AppSentAt = &now
+			return *status
+		}
+	}
+	last := statuses[len(statuses)-1]
+	return *last
+}
+
 func (sm *RideStatusListMap) Get(key string) []*RideStatus {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
@@ -107,6 +125,7 @@ type ChairLocationSummary struct {
 
 var userMap = NewSyncMap[string, User]()
 var chairRideMap = NewSyncMap[string, Ride]() // chair_id -> latest Ride
+var userRideMap = NewSyncMap[string, Ride]()  // user_id -> latest Ride
 var rideStatusListMap = NewRideStatusListMap()
 var chairLocationSummaryMap = NewSyncMap[string, ChairLocationSummary]() // chair_id -> ChairLocationSummary
 var latestChairLocationMap = NewSyncMap[string, ChairLocation]()         // chair_id -> latest ChairLocation
@@ -122,15 +141,26 @@ func LoadMap() {
 func LoadUserFromDB() {
 	// clear sync map
 	userMap.Clear()
+	userRideMap.Clear()
 
 	var rows []*User
 	if err := db.Select(&rows, `SELECT * FROM users`); err != nil {
 		log.Fatalf("failed to load users: %+v", err)
 		return
 	}
-	for _, row := range rows {
+	for _, user := range rows {
 		// add to sync map
-		userMap.Add(row.ID, *row)
+		userMap.Add(user.ID, *user)
+
+		var ride Ride
+		if err := db.Get(&ride, `SELECT * FROM rides WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1`, user.ID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			log.Fatalf("failed to load rides: %+v", err)
+			return
+		}
+		userRideMap.Add(user.ID, ride)
 	}
 }
 
