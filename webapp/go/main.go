@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 	"time"
 
 	_ "net/http/pprof"
@@ -24,6 +25,54 @@ import (
 
 var db *sqlx.DB
 
+type SyncMap[K comparable, V any] struct {
+	m  map[K]*V
+	mu sync.RWMutex
+}
+
+func NewSyncMap[K comparable, V any]() *SyncMap[K, V] {
+	return &SyncMap[K, V]{m: map[K]*V{}}
+}
+
+func (sm *SyncMap[K, V]) Add(key K, value V) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.m[key] = &value
+}
+
+func (sm *SyncMap[K, V]) Get(key K) *V {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.m[key]
+}
+
+func (sm *SyncMap[K, V]) Clear() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.m = map[K]*V{}
+}
+
+var userMap = NewSyncMap[string, User]()
+
+func LoadMap() {
+	LoadUserFromDB()
+}
+
+func LoadUserFromDB() {
+	// clear sync map
+	userMap.Clear()
+
+	var rows []*User
+	if err := db.Select(&rows, `SELECT * FROM users`); err != nil {
+		log.Fatalf("failed to load : %+v", err)
+		return
+	}
+	for _, row := range rows {
+		// add to sync map
+		userMap.Add(row.ID, *row)
+	}
+}
+
 func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
 	go func() {
@@ -31,6 +80,8 @@ func main() {
 	}()
 
 	mux := setup()
+	LoadMap()
+
 	slog.Info("Listening on :8080")
 	http.ListenAndServe(":8080", mux)
 }
@@ -172,6 +223,8 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	LoadMap()
 
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }

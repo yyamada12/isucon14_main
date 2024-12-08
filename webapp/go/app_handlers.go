@@ -122,6 +122,18 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userMap.Add(userID, User{
+		ID:             userID,
+		Username:       req.Username,
+		Firstname:      req.FirstName,
+		Lastname:       req.LastName,
+		DateOfBirth:    req.DateOfBirth,
+		AccessToken:    accessToken,
+		InvitationCode: invitationCode,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	})
+
 	http.SetCookie(w, &http.Cookie{
 		Path:  "/",
 		Name:  "app_session",
