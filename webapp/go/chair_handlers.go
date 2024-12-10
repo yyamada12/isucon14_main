@@ -141,18 +141,22 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	summary.UpdatedAt.Valid = true
 	chairLocationSummaryMap.Add(chair.ID, *summary)
 
-	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	} else {
-		status, err := getLatestRideStatus(ctx, tx, ride.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+	ride := chairRideMap.Get(chair.ID)
+	if ride != nil {
+		// ride := &Ride{}
+		// if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
+		// 	if !errors.Is(err, sql.ErrNoRows) {
+		// 		writeError(w, http.StatusInternalServerError, err)
+		// 		return
+		// 	}
+		// } else {
+		status := rideStatusListMap.GetLatest(ride.ID).Status
+
+		// status, err := getLatestRideStatus(ctx, tx, ride.ID)
+		// if err != nil {
+		// 	writeError(w, http.StatusInternalServerError, err)
+		// 	return
+		// }
 		rideStatusID := ulid.Make().String()
 		if status != "COMPLETED" && status != "CANCELED" {
 			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {

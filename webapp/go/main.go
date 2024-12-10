@@ -105,6 +105,17 @@ func (sm *RideStatusListMap) GetUserStatus(key string) RideStatus {
 	return *last
 }
 
+func (sm *RideStatusListMap) GetLatest(key string) RideStatus {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	statuses, ok := sm.m[key]
+	if !ok {
+		return RideStatus{}
+	}
+	last := statuses[len(statuses)-1]
+	return *last
+}
+
 func (sm *RideStatusListMap) Get(key string) []*RideStatus {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
