@@ -18,6 +18,7 @@ import (
 
 	_ "net/http/pprof"
 
+	"github.com/felixge/fgprof"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-sql-driver/mysql"
@@ -238,10 +239,10 @@ func LoadLatestChairLocationFromDB() {
 }
 
 func main() {
-	// http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
-	// go func() {
-	// 	fmt.Println(http.ListenAndServe("localhost:6060", nil))
-	// }()
+	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
+	go func() {
+		fmt.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	mux := setup()
 	LoadMap()
@@ -283,7 +284,6 @@ func setup() http.Handler {
 	dbConfig.Net = "tcp"
 	dbConfig.DBName = dbname
 	dbConfig.ParseTime = true
-	dbConfig.InterpolateParams = true
 
 	_db, err := sqlx.Connect("mysql", dbConfig.FormatDSN())
 	if err != nil {
@@ -302,7 +302,7 @@ func setup() http.Handler {
 	log.Print("DB ready!")
 
 	mux := chi.NewRouter()
-	// mux.Use(middleware.Logger)
+	mux.Use(middleware.Logger)
 	mux.Use(middleware.Recoverer)
 	mux.HandleFunc("POST /api/initialize", postInitialize)
 
@@ -357,20 +357,20 @@ type postInitializeResponse struct {
 }
 
 func postInitialize(w http.ResponseWriter, r *http.Request) {
-	// go func() {
-	// 	if out, err := exec.Command("/home/isucon/local/golang/bin/go", "tool", "pprof", "-seconds=30", "-proto", "-output", "/home/isucon/pprof/pprof.pb.gz", "localhost:6060/debug/pprof/profile").CombinedOutput(); err != nil {
-	// 		fmt.Printf("pprof failed with err=%s, %s", string(out), err)
-	// 	} else {
-	// 		fmt.Printf("pprof.pb.gz created: %s", string(out))
-	// 	}
-	// }()
-	// go func() {
-	// 	if out, err := exec.Command("/home/isucon/local/golang/bin/go", "tool", "pprof", "-seconds=30", "-proto", "-output", "/home/isucon/pprof/fgprof.pb.gz", "localhost:6060/debug/fgprof").CombinedOutput(); err != nil {
-	// 		fmt.Printf("fgprof failed with err=%s, %s", string(out), err)
-	// 	} else {
-	// 		fmt.Printf("fgprof.pb.gz created: %s", string(out))
-	// 	}
-	// }()
+	go func() {
+		if out, err := exec.Command("/home/isucon/local/golang/bin/go", "tool", "pprof", "-seconds=30", "-proto", "-output", "/home/isucon/pprof/pprof.pb.gz", "localhost:6060/debug/pprof/profile").CombinedOutput(); err != nil {
+			fmt.Printf("pprof failed with err=%s, %s", string(out), err)
+		} else {
+			fmt.Printf("pprof.pb.gz created: %s", string(out))
+		}
+	}()
+	go func() {
+		if out, err := exec.Command("/home/isucon/local/golang/bin/go", "tool", "pprof", "-seconds=30", "-proto", "-output", "/home/isucon/pprof/fgprof.pb.gz", "localhost:6060/debug/fgprof").CombinedOutput(); err != nil {
+			fmt.Printf("fgprof failed with err=%s, %s", string(out), err)
+		} else {
+			fmt.Printf("fgprof.pb.gz created: %s", string(out))
+		}
+	}()
 
 	ctx := r.Context()
 	req := &postInitializeRequest{}
