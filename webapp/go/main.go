@@ -141,7 +141,13 @@ var rideStatusListMap = NewRideStatusListMap()
 var chairLocationSummaryMap = NewSyncMap[string, ChairLocationSummary]() // chair_id -> ChairLocationSummary
 var latestChairLocationMap = NewSyncMap[string, ChairLocation]()         // chair_id -> latest ChairLocation
 
+var paymentGatewayURL string
+
 func LoadMap() {
+	if err := db.Get(&paymentGatewayURL, "SELECT value FROM settings WHERE name = 'payment_gateway_url'"); err != nil {
+		log.Fatalf("failed to load payment_gateway_url: %+v", err)
+	}
+
 	LoadUserFromDB()
 	LoadChairFromDB()
 	LoadRideStatusFromDB()
