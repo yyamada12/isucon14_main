@@ -451,6 +451,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		Status: "MATCHING",
 	})
 
+	rideMap.Add(rideID, ride)
 	userRideMap.Add(user.ID, ride)
 
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
@@ -547,15 +548,21 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, errors.New("ride not found"))
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
+	ride := rideMap.Get(rideID)
+	if ride == nil {
+		writeError(w, http.StatusNotFound, errors.New("ride not found"))
 		return
 	}
+	// ride := &Ride{}
+	// if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
+	// 	if errors.Is(err, sql.ErrNoRows) {
+	// 		writeError(w, http.StatusNotFound, errors.New("ride not found"))
+	// 		return
+	// 	}
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
+
 	// status, err := getLatestRideStatus(ctx, tx, ride.ID)
 	// if err != nil {
 	// 	writeError(w, http.StatusInternalServerError, err)
@@ -568,10 +575,12 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	now := time.Now()
+
 	result, err := tx.ExecContext(
 		ctx,
-		`UPDATE rides SET evaluation = ? WHERE id = ?`,
-		req.Evaluation, rideID)
+		`UPDATE rides SET evaluation = ?, updated_at = ? WHERE id = ?`,
+		req.Evaluation, now, rideID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -583,6 +592,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errors.New("ride not found"))
 		return
 	}
+	ride.UpdatedAt = now
 
 	rideStatusID := ulid.Make().String()
 	_, err = tx.ExecContext(
@@ -599,14 +609,14 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		Status: "COMPLETED",
 	})
 
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, errors.New("ride not found"))
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	// if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
+	// 	if errors.Is(err, sql.ErrNoRows) {
+	// 		writeError(w, http.StatusNotFound, errors.New("ride not found"))
+	// 		return
+	// 	}
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
 
 	paymentToken := &PaymentToken{}
 	if err := tx.GetContext(ctx, paymentToken, `SELECT * FROM payment_tokens WHERE user_id = ?`, ride.UserID); err != nil {

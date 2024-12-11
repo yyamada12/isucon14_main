@@ -135,6 +135,7 @@ type ChairLocationSummary struct {
 }
 
 var userMap = NewSyncMap[string, User]()
+var rideMap = NewSyncMap[string, Ride]()      // ride_id -> Ride
 var chairRideMap = NewSyncMap[string, Ride]() // chair_id -> latest Ride
 var userRideMap = NewSyncMap[string, Ride]()  // user_id -> latest Ride
 var rideStatusListMap = NewRideStatusListMap()
@@ -201,6 +202,21 @@ func LoadChairFromDB() {
 			return
 		}
 		chairRideMap.Add(chair.ID, ride)
+	}
+}
+
+func LoadRideFromDB() {
+	// clear sync map
+	rideMap.Clear()
+
+	var rows []*Ride
+	if err := db.Select(&rows, `SELECT * FROM rides`); err != nil {
+		log.Fatalf("failed to load : %+v", err)
+		return
+	}
+	for _, row := range rows {
+		// add to sync map
+		rideMap.Add(row.ID, *row)
 	}
 }
 

@@ -66,6 +66,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 
 	chairRideMap.Add(matched.ID, *ride)
 	userRideMap.Add(ride.UserID, *ride)
+	rideMap.Add(ride.ID, *ride)
 
 	w.WriteHeader(http.StatusNoContent)
 }
